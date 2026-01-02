@@ -1,0 +1,9 @@
+{
+    "name": "Export JSON Pro (AutoLayout+Assets+Variants+Fonts)",
+    "id": "export-json-pro-autolayout-assets-variants-fonts-dev",
+    "api": "1.0.0",
+    "main": "code.js",
+    "ui": "ui.html",
+    "editorType": ["figma"]
+  }
+  

@@ -1,0 +1,198 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 14px; }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+      label { font-size: 12px; color: #333; display: inline-flex; gap: 6px; align-items: center; }
+      input, select { font-size: 12px; padding: 6px; }
+      button { padding: 8px 10px; cursor: pointer; font-size: 12px; }
+      pre { white-space: pre-wrap; word-break: break-word; background: #f6f6f6; padding: 10px; border-radius: 8px; max-height: 320px; overflow: auto; font-size: 11px; }
+      .err { color: #b00020; margin: 6px 0; font-size: 12px; }
+      .hint { color: #666; font-size: 12px; margin-bottom: 10px; line-height: 1.35; }
+      a { display: inline-block; margin-right: 10px; margin-top: 8px; font-size: 12px; }
+      .pill { background: #eef2ff; padding: 3px 8px; border-radius: 999px; font-size: 11px; color: #1f2937; }
+    </style>
+  </head>
+  <body>
+    <div class="hint">
+      JSON 다운로드는 항상 가능합니다. ZIP 다운로드는 jszip.min.js를 플러그인 폴더에 추가하면 활성화됩니다.
+      <div style="margin-top:6px;">
+        <span class="pill">AutoLayout</span>
+        <span class="pill">Assets(SVG/PNG)</span>
+        <span class="pill">Variants split</span>
+        <span class="pill">Fonts meta</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <label>
+        Export
+        <select id="mode">
+          <option value="selection">Selection</option>
+          <option value="page">Current Page</option>
+        </select>
+      </label>
+
+      <label>
+        Max Depth
+        <input id="depth" type="number" min="1" max="200" value="80" style="width: 70px;" />
+      </label>
+
+      <label>
+        Split Variants
+        <input id="splitVariants" type="checkbox" checked />
+      </label>
+
+      <label>
+        Include Main Tree
+        <input id="includeMain" type="checkbox" checked />
+      </label>
+
+      <label>
+        Export Assets
+        <input id="assets" type="checkbox" checked />
+      </label>
+
+      <label>
+        PNG Scale
+        <select id="pngScale">
+          <option value="1">1x</option>
+          <option value="2">2x</option>
+        </select>
+      </label>
+
+      <label>
+        Formats
+        <select id="formats" multiple size="2">
+          <option value="SVG" selected>SVG</option>
+          <option value="PNG" selected>PNG</option>
+        </select>
+      </label>
+
+      <button id="go">Export</button>
+    </div>
+
+    <div id="err" class="err"></div>
+    <pre id="out">Export를 누르면 결과 요약이 표시됩니다.</pre>
+
+    <div class="row">
+      <a id="downloadJson" style="display:none">Download JSON</a>
+      <a id="downloadZip" style="display:none">Download ZIP</a>
+    </div>
+
+    <script>
+      const out = document.getElementById("out");
+      const err = document.getElementById("err");
+      const downloadJson = document.getElementById("downloadJson");
+      const downloadZip = document.getElementById("downloadZip");
+
+      let lastPayload = null;
+
+      function setError(message) {
+        err.textContent = message || "";
+      }
+
+      function getSelectedFormats() {
+        const el = document.getElementById("formats");
+        const values = [];
+        for (const opt of el.options) {
+          if (opt.selected) values.push(opt.value);
+        }
+        return values.length ? values : ["SVG", "PNG"];
+      }
+
+      function setJsonDownload(payload) {
+        const text = JSON.stringify(payload, null, 2);
+        const blob = new Blob([text], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+
+        downloadJson.href = url;
+        downloadJson.download = `figma-export-pro-${Date.now()}.json`;
+        downloadJson.style.display = "inline-block";
+        downloadJson.textContent = "Download JSON";
+      }
+
+      async function setZipDownload(payload) {
+        if (typeof JSZip === "undefined") {
+          downloadZip.style.display = "none";
+          return;
+        }
+
+        const zip = new JSZip();
+
+        zip.file("export.json", JSON.stringify(payload, null, 2));
+
+        if (payload.assets) {
+          const assetsFolder = zip.folder("assets");
+          for (const key of Object.keys(payload.assets)) {
+            const a = payload.assets[key];
+            if (!a || !a.base64 || !a.name) continue;
+            const name = a.name;
+            assetsFolder.file(name, a.base64, { base64: true });
+          }
+        }
+
+        const blob = await zip.generateAsync({ type: "blob" });
+        const url = URL.createObjectURL(blob);
+
+        downloadZip.href = url;
+        downloadZip.download = `figma-export-pro-${Date.now()}.zip`;
+        downloadZip.style.display = "inline-block";
+        downloadZip.textContent = "Download ZIP";
+      }
+
+      function summarize(payload) {
+        const exportCount = payload.exports ? payload.exports.length : 0;
+        const assetCount = payload.assets ? Object.keys(payload.assets).length : 0;
+        const fontCount = payload.fonts && payload.fonts.uniqueFonts ? payload.fonts.uniqueFonts.length : 0;
+        const textNodes = payload.fonts ? payload.fonts.totalTextNodes : 0;
+
+        out.textContent =
+          `meta.exportedAt: ${payload.meta?.exportedAt}\n` +
+          `exports: ${exportCount}\n` +
+          `assets: ${assetCount}\n` +
+          `textNodes: ${textNodes}\n` +
+          `uniqueFonts: ${fontCount}\n\n` +
+          `Download JSON으로 전체 결과를 확인하세요.`;
+      }
+
+      document.getElementById("go").onclick = () => {
+        setError("");
+        const options = {
+          exportMode: document.getElementById("mode").value,
+          maxDepth: Number(document.getElementById("depth").value || 80),
+          splitVariants: document.getElementById("splitVariants").checked,
+          includeMainTree: document.getElementById("includeMain").checked,
+          exportAssets: document.getElementById("assets").checked,
+          pngScale: Number(document.getElementById("pngScale").value || 1),
+          assetFormats: getSelectedFormats()
+        };
+
+        parent.postMessage({ pluginMessage: { type: "EXPORT", options } }, "*");
+      };
+
+      window.onmessage = (event) => {
+        const msg = event.data.pluginMessage;
+        if (!msg) return;
+
+        if (msg.type === "ERROR") {
+          setError(msg.message);
+          return;
+        }
+
+        if (msg.type === "RESULT") {
+          setError("");
+          lastPayload = msg.payload;
+
+          summarize(lastPayload);
+          setJsonDownload(lastPayload);
+          setZipDownload(lastPayload);
+        }
+      };
+    </script>
+
+    <script src="./jszip.min.js"></script>
+  </body>
+</html>

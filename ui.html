@@ -8,11 +8,13 @@
       label { font-size: 12px; color: #333; display: inline-flex; gap: 6px; align-items: center; }
       input, select { font-size: 12px; padding: 6px; }
       button { padding: 8px 10px; cursor: pointer; font-size: 12px; }
-      pre { white-space: pre-wrap; word-break: break-word; background: #f6f6f6; padding: 10px; border-radius: 8px; max-height: 320px; overflow: auto; font-size: 11px; }
+      pre { white-space: pre-wrap; word-break: break-word; background: #f6f6f6; padding: 10px; border-radius: 8px; max-height: 420px; overflow: auto; font-size: 11px; }
       .err { color: #b00020; margin: 6px 0; font-size: 12px; }
       .hint { color: #666; font-size: 12px; margin-bottom: 10px; line-height: 1.35; }
       a { display: inline-block; margin-right: 10px; margin-top: 8px; font-size: 12px; }
       .pill { background: #eef2ff; padding: 3px 8px; border-radius: 999px; font-size: 11px; color: #1f2937; }
+      .warn { background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; padding:10px; border-radius:10px; font-size:12px; margin-bottom:10px; line-height:1.35; }
+      .debug { background:#eef2ff; border:1px solid #c7d2fe; color:#1e3a8a; padding:10px; border-radius:10px; font-size:12px; margin-bottom:10px; line-height:1.35; }
     </style>
   </head>
   <body>
@@ -24,6 +26,15 @@
         <span class="pill">Variants split</span>
         <span class="pill">Fonts meta</span>
       </div>
+    </div>
+
+    <div class="warn">
+      AutoLayout은 주로 FRAME/COMPONENT에 존재합니다. 그룹/개별 레이어만 선택하면 autoLayout이 없을 수 있습니다.
+    </div>
+
+    <div class="debug">
+      디버그: Export 후에도 JSON이 아니라 코드가 보이면, RESULT 메시지를 못 받거나 payload가 문자열로 오고 있는 겁니다.
+      아래 출력(out)에 마지막으로 받은 메시지를 같이 표시합니다.
     </div>
 
     <div class="row">
@@ -75,7 +86,7 @@
     </div>
 
     <div id="err" class="err"></div>
-    <pre id="out">Export를 누르면 결과 요약이 표시됩니다.</pre>
+    <pre id="out">Export를 누르면 결과 요약 + 마지막 메시지가 표시됩니다.</pre>
 
     <div class="row">
       <a id="downloadJson" style="display:none">Download JSON</a>
@@ -121,7 +132,6 @@
         }
 
         const zip = new JSZip();
-
         zip.file("export.json", JSON.stringify(payload, null, 2));
 
         if (payload.assets) {
@@ -129,8 +139,7 @@
           for (const key of Object.keys(payload.assets)) {
             const a = payload.assets[key];
             if (!a || !a.base64 || !a.name) continue;
-            const name = a.name;
-            assetsFolder.file(name, a.base64, { base64: true });
+            assetsFolder.file(a.name, a.base64, { base64: true });
           }
         }
 
@@ -143,19 +152,23 @@
         downloadZip.textContent = "Download ZIP";
       }
 
-      function summarize(payload) {
+      function summarize(payload, lastMsg) {
         const exportCount = payload.exports ? payload.exports.length : 0;
         const assetCount = payload.assets ? Object.keys(payload.assets).length : 0;
         const fontCount = payload.fonts && payload.fonts.uniqueFonts ? payload.fonts.uniqueFonts.length : 0;
         const textNodes = payload.fonts ? payload.fonts.totalTextNodes : 0;
+        const autoLayoutCount = payload.meta && payload.meta.stats ? payload.meta.stats.autoLayoutNodes : 0;
+
+        const debugMsg = lastMsg ? JSON.stringify(lastMsg, null, 2) : "";
 
         out.textContent =
-          `meta.exportedAt: ${payload.meta?.exportedAt}\n` +
           `exports: ${exportCount}\n` +
           `assets: ${assetCount}\n` +
           `textNodes: ${textNodes}\n` +
-          `uniqueFonts: ${fontCount}\n\n` +
-          `Download JSON으로 전체 결과를 확인하세요.`;
+          `uniqueFonts: ${fontCount}\n` +
+          `autoLayoutNodes: ${autoLayoutCount}\n\n` +
+          `--- LAST MESSAGE ---\n` +
+          `${debugMsg}\n`;
       }
 
       document.getElementById("go").onclick = () => {
@@ -174,21 +187,33 @@
       };
 
       window.onmessage = (event) => {
-        const msg = event.data.pluginMessage;
-        if (!msg) return;
+        const data = event.data;
+        const msg = data && (data.pluginMessage || data);
+        if (!msg || !msg.type) return;
 
         if (msg.type === "ERROR") {
-          setError(msg.message);
+          setError(msg.message || "Unknown error");
+          out.textContent = JSON.stringify(msg, null, 2);
           return;
         }
 
         if (msg.type === "RESULT") {
-          setError("");
-          lastPayload = msg.payload;
+          const payload = msg.payload;
 
-          summarize(lastPayload);
+          if (!payload || typeof payload !== "object") {
+            setError("RESULT는 왔는데 payload가 객체가 아닙니다. code.js에서 보내는 구조를 확인하세요.");
+            out.textContent = JSON.stringify(msg, null, 2);
+            return;
+          }
+
+          setError("");
+          lastPayload = payload;
+
+          summarize(lastPayload, msg);
           setJsonDownload(lastPayload);
           setZipDownload(lastPayload);
+        } else {
+          out.textContent = JSON.stringify(msg, null, 2);
         }
       };
     </script>

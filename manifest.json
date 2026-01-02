@@ -1,6 +1,6 @@
 {
-    "name": "Export JSON Pro (AutoLayout+Assets+Variants+Fonts)",
-    "id": "export-json-pro-autolayout-assets-variants-fonts-dev",
+    "name": "Export JSON Pro",
+    "id": "export-json-pro-local",
     "api": "1.0.0",
     "main": "code.js",
     "ui": "ui.html",
